@@ -1,0 +1,22 @@
+<?php/**
+ * @file
+ * Example code for view_query_alter
+ */
+function module_name_views_query_alter() {
+
+  //joining tables to get the content types that don't have the comment block.
+  $join = new views_join();
+  $join - > table = 'field_data_field_news';
+  $join - > field = 'entity_id';
+  $join - > left_table = 'node_comment_statistics';
+  $join - > left_field = 'nid';
+  $join - > type = 'inner';
+  //Added to remove news types that doesn't have the comment block.
+  if (isset($view - > exposed_raw_input['sort_by'])) {
+    if (($view - > name == 'news_feed') && ($views - > exposed_raw_input['sort_by'] == 'comment_count')) {
+      $query - > add_relationship('field_data_field_news', $join, 'node_comment_statistics');
+      $query - > add_where(1, 'field_data_field_news.field_news_value', array('Health' => 'Health', 'Lifestyle' => 'Lifestyle'), 'NOT IN');
+    }
+  }
+
+}
