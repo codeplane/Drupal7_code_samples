@@ -1,14 +1,10 @@
-<?php
-
-/**
+<?php/**
  * @file
  * Example code for view_query_alter
  */
- 
 function module_name_views_query_alter() {
 
   //joining tables to get the content types that don't have the comment block.
-  
   $join = new views_join();
   $join - > table = 'field_data_field_news';
   $join - > field = 'entity_id';
@@ -22,4 +18,5 @@ function module_name_views_query_alter() {
       $query - > add_where(1, 'field_data_field_news.field_news_value', array('Health' => 'Health', 'Lifestyle' => 'Lifestyle'), 'NOT IN');
     }
   }
+
 }
