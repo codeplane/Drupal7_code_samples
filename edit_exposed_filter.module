@@ -1,0 +1,114 @@
+<?php
+
+/**
+ * @file
+ * Code-sample for altering views exposed filter values.
+ */
+
+/**
+ * Helper function to get the terms that are currently mapped to a
+ * content instead of displaying all the values in the exposed filter.
+ */
+function _get_taxonomy_terms() {
+  /* Here a view is created, to filter the term associated to a content.
+  The view's values are obtained programatically and assigned to the
+  exposed filters in form_alter.*/
+  static $refined_terms;
+
+  if (!isset($refined_terms)) {
+    if ($cache = cache_get('module_terms')) {
+      $refined_terms = $cache->data;
+    }
+    else {
+      $refined_terms = array();
+      $view_object = views_get_view("taxonomy_terms");
+      $view_object->set_display("page");
+      $view_object->pre_execute();
+      $view_object->execute();
+      $results = $view_object->result;
+      foreach ($results as $key => $value) {
+        $refined_terms[$value->tid] = $value->taxonomy_term_data_name;
+      }
+      cache_set('module_terms', $refined_terms, 'cache');
+    }
+  }
+
+  return $refined_terms;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function module_name_form_alter(&$form, &$form_state, $form_id) {
+  global $user;
+  if ($form_id == 'views_exposed_form' && ($form_state['view']->current_display == 'page' || $form_state['view']->current_display == 'page_2')) {
+    switch ($form['#id']) {
+      case 'views-exposed-form-view-page':
+        $results = _get_taxonomy_terms();
+        $refined_terms['All'] = t('Select a Topic');
+
+        $form['field_term_tree']['#options'] = $refined_terms + $results;
+        if ($user->uid > 0) {
+          $disabled = array();
+          $user_fields = user_load($user->uid);
+          if (!isset($user_fields->field_news[LANGUAGE_NONE])) {
+            $disabled['news'] = array('disabled' => TRUE);
+          }
+          if (!isset($user_fields->field_feed[LANGUAGE_NONE])) {
+            $disabled['feed'] = array('disabled' => TRUE);
+          }
+          // Adding a custom filter based on user's preferece.
+          $form['my_profile'] = array(
+            '#title' => 'My Profile',
+            '#type' => 'select',
+            '#multiple' => TRUE,
+            '#options' => array(
+              'feed' => t('Feed'),
+              'news' => t('News'),
+            ),
+            '#weight' => 8,
+          );
+
+          if (!empty($disabled)) {
+            $form['my_profile']['#option_attributes'] = $disabled;
+          }
+
+          $form['#info']['filter-my_profile'] = array('value' => 'my_profile');
+          // Adding a submit handler before views submit handler.
+          array_unshift($form['#submit'], 'custom_view_filters_selective');
+        }
+        break;
+
+      // Used switch-case instead of if-else as they are comparatively faster.
+      case 'form_id_2':
+
+        // Code here.
+        break;
+    }
+  }
+}
+
+/**
+ * * Submit handler for the views exposed filters.
+ */
+function custom_view_filters_selective($form, &$form_state) {
+  global $user;
+
+  if (isset($form_state['values']['my_profile']['news'])) {
+    $news = array();
+    /*Loading the user field to get the topic of interest field
+    from the user profile.*/
+    $user = user_load($user->uid);
+    /*Formating the topic of interests values so that it will be
+    compatible with the views news of interest filter.*/
+    foreach ($user->field_newst[LANGUAGE_NONE] as $key => $value) {
+      $news[$value['tid']] = $value['tid'];
+    }
+    if (count($news)) {
+      if (isset($form_state['view']->display_handler->handlers['filter']['field_term_tree_tid']->validated_exposed_input)) {
+        $form_state['view']->display_handler->handlers['filter']['field_term_tree_tid']->validated_exposed_input = array_merge($news, $form_state['view']->display_handler->handlers['filter']['field_term_tree_tid']->validated_exposed_input);
+      }
+      $form_state['values']['field_term_tree_tid'] = array_merge($news, $form_state['values']['field_term_tree_tid']);
+    }
+  }
+}

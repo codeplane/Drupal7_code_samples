@@ -1,0 +1,233 @@
+<?php
+/**
+ * @file
+ * Module editing the default comments block.
+ */
+
+/**
+ * Implementation of hook_menu().
+ */
+function comments_edit_menu() {
+  $items = array();
+  $items['static-page'] = array(
+    'title' => 'Redirect',
+    'page callback' => 'contact_redirect',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['node/%/ajax-load-comments'] = array(
+    'page callback' => 'comments_redirect',
+    'page arguments' => array(1),
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'delivery callback' => 'comments_delivery',
+  );
+
+  return $items;
+}
+
+/**
+ * page for loading comments block on ajax.
+ */
+function comments_redirect($nid) {
+
+  if ($_GET['sort'] == 'comments') {
+    $node = node_load($nid);
+    $comment = comment_node_page_additions($node);
+    print render($comment);
+    drupal_add_js('jQuery(document).ready(function() { jQuery(\'#commsort\').find(\'option\').eq(1).attr("selected","selected"); });', 'inline');
+
+  }
+  elseif ($_GET['sort'] == 'recents') {
+    $node = node_load($nid);
+    $comment = comment_node_page_additions($node);
+    print render($comment);
+
+  }
+}
+
+/**
+ * custom function to load comments block on ajax.
+ */
+function comments_delivery($page_callback_result) {
+  if ($_GET['sort'] == 'comments') {
+    $content = drupal_render($page_callback_result);
+    $html = drupal_get_css() . drupal_get_js() . $content;
+    print $html;
+  }
+  elseif ($_GET['sort'] == 'recents') {
+    $content = drupal_render($page_callback_result);
+    $html = drupal_get_css() . drupal_get_js() . $content;
+    print $html;
+  }
+}
+
+
+/**
+ * Implements hook_form_alter().
+ */
+function comments_edit_form_alter(&$form, &$form_state, &$comment) {
+
+  // print '<pre>';print_r($user);exit;
+  // Rename save button as submit in comment section.
+  if ($comment == "comment_news") {
+    $form['actions']['submit']['#value'] = t('submit');
+    $form['actions'] = array(
+      '#type' => 'submit',
+      '#value' => t('Submit'),
+      '#weight' => 1,
+      '#attributes' => array(
+        "CLASS"   => "btn btn-primary form-submit ajax-comments",
+      ),
+      '#ajax' => array(
+        'event' => 'click',
+        'callback' => 'ajax_link_2_callback',
+        'effect' => 'fade',
+      ),
+    );
+  }
+
+  // To change the content of the comment abuse pop up.
+  if ($comment == "comment_abuse_complaint_form") {
+    $result_modes = array();
+
+    $result_modes = array_diff($selected_modes, $available_modes);
+
+    asort($result_modes);
+
+    $form['field_news']['#options'] = array_merge($available_modes, $result_modes);
+
+    foreach ($form['field_news']['#options'] as $res => $key) {
+
+      if (in_array($key, $result_modes)) {
+
+        $form['field_news']['#option_attributes'][$res] = array('disabled' => TRUE);
+
+      }
+
+    }
+
+    $form['form_wrapper']['comment_abuse_complaint_reason'] = array(
+      '#type' => 'radios',
+      '#title' => t('Reporting a comment or conversation sends a notification to our moderation team. They will review the message and take the appropriate action.This action cannot be undone'),
+      '#options' => array(
+        'Flag as spam' => t('Flag as spam'),
+        1 => t('Flag as inappropriate'),
+      ),
+      '#default_value' => variable_get('comment_abuse_complaint_reason', 0),
+    );
+
+    $form['form_wrapper']['button'] = array(
+      '#type' => 'button',
+      '#value' => t('cancel'),
+      '#attributes' => array('onclick' => 'comment_abuse_close_div();'),
+    );
+
+    $form['form_wrapper']['submit'] = array(
+      '#type' => 'submit',
+      '#value' => t('Flag'),
+    );
+    // To remove the message text area.
+    $form['form_wrapper']['comment_abuse_complaint_message'] = array();
+    $form['#validate'] = array();
+  }
+
+  if ($comment == 'user_account_form' || $comment == 'user_login_block') {
+    global $base_url;
+    $link = l('Create account', 'https://www.news.org' . $base_url . '/saml_login?ReturnTo=' . $base_url);
+    $links = $form['links']['#markup'];
+    $links = str_replace('</ul>', '<li class="saml">' . $link . '</li></ul>', $links);
+    $form['links']['#markup'] = $links;
+  }
+  global $user;
+  if ($comment == "user_profile_form") {
+    unset($form['account']['field_feed']['und']['#options']['_none']);
+    drupal_add_js('jQuery(document).ready(function () { jQuery(\'#edit-cancel--2\').insertAfter(jQuery(\'#edit-submit\')); jQuery(\'#edit-cancel--2\').removeAttr(\'type\');  });', 'inline');
+    $form['cancel'] = array(
+      '#type' => 'button',
+      '#value' => t('Cancel'),
+      '#weight' => 100,
+      '#executes_submit_callback' => TRUE,
+      '#submit' => array('comments_edit_form_cancel'),
+    );
+    drupal_add_js('jQuery(document).ready(function() { jQuery(\'#edit-cancel--2\').addClass(\'btn-primary\'); });', 'inline');
+    $form['#submit'][] = 'custom_submit_function';
+
+    $form['contact']['#access'] = FALSE;
+    $form['account']['name']['#access'] = FALSE;
+    $form['account']['mail']['#access'] = FALSE;
+    $form['account']['pass']['#access'] = FALSE;
+    $form['account']['current_pass']['#access'] = FALSE;
+    unset($form['overlay_control']);
+
+  }
+}
+
+
+/**
+ *
+ */
+function custompage_query_comment_filter_alter(QueryAlterableInterface $query) {
+  $orderby = &$query->getOrderBy();
+  if (isset($_GET['sort']) && $_GET['sort'] == 'comments') {
+    $nested_query = 'IF(c.pid = 0, (SELECT COUNT(sc.cid) FROM comment sc WHERE sc.pid = c.cid), (SELECT COUNT(sc.cid) FROM comment sc WHERE sc.pid = c.pid))';
+    $orderby = array('tsub' => 'DESC');
+    $query->addExpression($nested_query, 'tsub');
+  }
+  else {
+    // Sorting for threaded comments.
+    if (isset($orderby['torder'])) {
+      // Sort by root parent first, then normal threaded.
+      $query->addExpression("SUBSTRING_INDEX(c.thread, '.', 1)", 'rparent');
+      $orderby = array('rparent' => 'DESC') + $orderby;
+    }
+    // Sorting for flat comments.
+    elseif (isset($orderby['c.cid'])) {
+      $direction = 'DESC';
+
+      $orderby['c.cid'] = $direction;
+      $orderby = array('c.created' => $direction) + $orderby;
+    }
+  }
+}
+/**
+ *
+ */
+function custompage_form_comment_form_alter(&$form, &$form_state) {
+  // Add a custom submit handler to act when the form submits.
+  global $user;
+  $user_fields = user_load($user->uid);
+  // kpr($user_fields->field_first_name['und'][0]['value']);.
+  $form['#submit'][] = 'custompage_custom_comment_submit_handler';
+
+  if (isset($form['author']['_author'])) {
+    $form['author']['_author']['#markup'] = $user_fields->field_first_name['und'][0]['value'];
+  }
+  else {
+    $form['author']['name']['#value'] = $user_fields->field_first_name['und'][0]['value'];
+  }
+}
+
+/**
+ * Custom submit handler for the comment form.
+ */
+function custompage_custom_comment_submit_handler($form, &$form_state) {
+  // Redirect the user after submission.
+  $nid = arg(2);
+  $form_state['redirect'] = 'node/' . $nid;
+}
+
+/**
+ *
+ */
+function custom_submit_function() {
+  drupal_goto('user');
+}
+
+/**
+ *
+ */
+function custompage_form_cancel() {
+  drupal_goto("user");
+}
